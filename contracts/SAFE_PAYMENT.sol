@@ -49,6 +49,8 @@ function SAFE_PAYMENT(){
     allCustomersNum = 0;
     maxAllowedOpenOrdersPerCustomer = 10;
 }
+//for payments receiving 
+function () payable {freeBalances[msg.sender]+=msg.value;}
 //check order's access permission for owner and customer by its id
 function isOwnCust(uint _orderID) private returns(bool){
     if (msg.sender == owner || msg.sender == secondOwner || msg.sender == orders[_orderID].customerAddress || msg.sender == orders[_orderID].secondAddress)
@@ -71,6 +73,26 @@ function CheckContractExist(address _resultContract, string _resultContractABI) 
 function RemoveResContractOwners(address _resultContract, string _resultContractABI) private returns(bool){
 //реализовать удаление всех владельцев кроме адресов заказчика из разработанного контракта    
 }
+// send money from Free balanses to order/ 0-error(no money) 1-ok(customer order deposit) 2-ok(owner insuranse payment) 3-error(invalid order num) 
+function SendEtherToOrder(uint _orderID, uint _amount) private returns(uint _res){
+    _res=0;
+    if(freeBalances[msg.sender] >= _amount){
+        _res=3;
+        //contract owner can't create contract to work with himself
+        if(msg.sender == owner || msg.sender==secondOwner){
+            freeBalances[msg.sender] -= _amount;
+            orders[_orderID].ownerPaid +=_amount;
+            _res=1;
+        }
+        if(isOwnCust(_orderID) == true){
+            freeBalances[msg.sender] -= _amount;
+            orders[_orderID].customerPaid +=_amount;
+            _res=2;
+        }
+    }
+    return _res;
+}
+
 
 /*-----------------------for customer------------------------*/
 // 1. create order
@@ -105,28 +127,8 @@ function SetSecondAddress(uint _orderID, address _secondAddress)returns(bool){if
 function SetlockOwnerMoneyBack(uint _orderID) returns(bool){if(isCustomer(_orderID)==true){orders[_orderID].lockOwnerMoneyBack = false;return true;}} // 1. unlock security deposit for contract owner
 function UnlockMoney(uint _orderID) returns(bool){if(isCustomer(_orderID)==true){orders[_orderID].lockMoney = false;orders[_orderID].lockOwnerMoneyBack = false;if(RemoveResContractOwners(orders[_orderID].resultContract, orders[_orderID].resultContractABI) == true){orders[_orderID].orderState = 4;return true;}}}// 1. unlock payment for work for contract owner
 function UnlockOwnerPrePaidMoney(uint _orderID) returns(bool){if(isCustomer(_orderID)==true){orders[_orderID].lockOwnerMoneyBack = false;}}// 1. unlock owner security payment for work for contract owner
-// Make Payment for future work. That is possible to pay as many times, as it is need. Auto lock Money after ncreasing invoice.
-function MakePayment(uint _orderID, uint _value) returns(bool){
-    if(isCustomer(_orderID)==true){
-//превести деньги на счёт заказа 
-        orders[_orderID].customerPaid = orders[_orderID].customerPaid + _value;
-        if (orders[_orderID].customerPaid > orders[_orderID].invoice){
-            LockMoney(_orderID);
-        }
-        return true;
-    }
-}
-// Customer must paid value equal or more then it was set in invoice by owner
-function LockMoney(uint _orderID) returns(bool){
-    if(isCustomer(_orderID)==true){
-        require(orders[_orderID].customerPaid >= orders[_orderID].invoice && orders[_orderID].invoice > 0);
-        orders[_orderID].lockMoney = true;
-        orders[_orderID].lockOwnerMoneyBack = true;
-        orders[_orderID].lockCustomerMoneyBack = true;
-        orders[_orderID].orderState = 1;
-        return true;
-    }
-}
+function MakePayment(uint _orderID, uint _value) returns(bool){if(isCustomer(_orderID)==true){if(SendEtherToOrder(_orderID, _value)==1){if (orders[_orderID].customerPaid > orders[_orderID].invoice){LockMoney(_orderID);}return true;}}}// Make Payment for future work. That is possible to pay as many times, as it is need. Auto lock Money after ncreasing invoice.
+function LockMoney(uint _orderID) returns(bool){if(isCustomer(_orderID)==true){require(orders[_orderID].customerPaid >= orders[_orderID].invoice && orders[_orderID].invoice > 0);orders[_orderID].lockMoney = true;orders[_orderID].lockOwnerMoneyBack = true;orders[_orderID].lockCustomerMoneyBack = true;orders[_orderID].orderState = 1;return true;}}// Customer must paid value equal or more then it was set in invoice by owner
 // Customer can take money back untill the order is not in work
 function CustomerMoneyBack(uint _orderID) returns(bool){
     uint valueForPaid;
@@ -169,7 +171,7 @@ function getSecondAddress(uint _orderID) constant returns (address){if (isOwnCus
 function getResultContract(uint _orderID) constant returns (address){if (isOwnCust(_orderID) == true){return orders[_orderID].resultContract;}}
 function getResultContractABI(uint _orderID) constant returns (string){if (isOwnCust(_orderID) == true){return orders[_orderID].resultContractABI;}}
 function getStateChangeDate(uint _orderID) constant returns (uint){if (isOwnCust(_orderID) == true){return orders[_orderID].stateChangeDate;}}
-
+function GetFreeBalances(address _member) returns(uint){if(msg.sender==_member || msg.sender==owner || msg.sender==secondOwner){return freeBalances[msg.sender];}}//everyone can red his own free balanse (and owner)
 
 
 /*-----------------------for owner---------------------------*/
@@ -201,12 +203,7 @@ function SetInvoice(uint _orderID, uint _invoice) _isOwner returns(bool){
     return true;
 }
 // 1b. make security deposit
-function SecurityDeposit(uint _orderID, uint _value) _isOwner returns(bool){
-    require (orders[_orderID].orderState == 0);
-//превести деньги на счёт заказа (либо со счёта а контракте со свободными деньгами, либо при платеже в адрес контракта)
-     orders[_orderID].ownerPaid += _value;
-    return true;
-}
+function SecurityDeposit(uint _orderID, uint _value) _isOwner returns(bool){require(orders[_orderID].orderState == 0);if(SendEtherToOrder(_orderID, _value)==2){return true;}}
 //7. withdraw all money from order o owner
 function WithdrowOrderMoneyForOwner(uint _orderID) _isOwner returns(bool){
     require (orders[_orderID].lockMoney == false);
@@ -243,11 +240,16 @@ function WithdrowOwnerPaidForSecondOwner(uint _orderID) _isOwner returns(bool){
 
 
 
-//for payments receiving
-function () payable {
-    //call your function here / implement your actions
-    //msg.value - полученная сумма
-  }
+
+
+
+
+
+
+
+
+  
+  
 //for paying
 function SendEtherToOwner(uint256 _amount) _isOwner private returns(bool){
     //owner.transfer(_amount); - передать на адрес владельца
