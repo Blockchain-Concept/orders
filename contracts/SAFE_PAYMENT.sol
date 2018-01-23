@@ -128,7 +128,10 @@ function SetlockOwnerMoneyBack(uint _orderID) returns(bool){if(isCustomer(_order
 function UnlockMoney(uint _orderID) returns(bool){if(isCustomer(_orderID)==true){orders[_orderID].lockMoney = false;orders[_orderID].lockOwnerMoneyBack = false;if(RemoveResContractOwners(orders[_orderID].resultContract, orders[_orderID].resultContractABI) == true){orders[_orderID].orderState = 4;return true;}}}// 1. unlock payment for work for contract owner
 function UnlockOwnerPrePaidMoney(uint _orderID) returns(bool){if(isCustomer(_orderID)==true){orders[_orderID].lockOwnerMoneyBack = false;}}// 1. unlock owner security payment for work for contract owner
 function MakePayment(uint _orderID, uint _value) returns(bool){if(isCustomer(_orderID)==true){if(SendEtherToOrder(_orderID, _value)==1){if (orders[_orderID].customerPaid > orders[_orderID].invoice){LockMoney(_orderID);}return true;}}}// Make Payment for future work. That is possible to pay as many times, as it is need. Auto lock Money after ncreasing invoice.
-function LockMoney(uint _orderID) returns(bool){if(isCustomer(_orderID)==true){require(orders[_orderID].customerPaid >= orders[_orderID].invoice && orders[_orderID].invoice > 0);orders[_orderID].lockMoney = true;orders[_orderID].lockOwnerMoneyBack = true;orders[_orderID].lockCustomerMoneyBack = true;orders[_orderID].orderState = 1;return true;}}// Customer must paid value equal or more then it was set in invoice by owner
+function LockMoney(uint _orderID) private returns(bool){if(isCustomer(_orderID)==true){require(orders[_orderID].customerPaid >= orders[_orderID].invoice && orders[_orderID].invoice > 0 && orders[_orderID].orderState < 3);orders[_orderID].lockMoney = true;orders[_orderID].lockOwnerMoneyBack = true;orders[_orderID].lockCustomerMoneyBack = true;if(orders[_orderID].orderState == 0){orders[_orderID].orderState = 1;}return true;}}// Customer must paid value equal or more then it was set in invoice by owner
+
+
+
 function CustomerMoneyBack(uint _orderID, uint _mainOrSecond) returns(bool){
     if(isCustomer(_orderID)==true){
         require (orders[_orderID].lockCustomerMoneyBack == false && orders[_orderID].customerPaid > 0);
@@ -182,7 +185,7 @@ function SetSecondOwner(address _secondOwner) _isOwner returns(bool){secondOwner
 function GetMaxOrderID() constant _isOwner returns(uint){return orders.length;} // reading orders amount (and last order number)
 function GetMaxCustomerOrder(address _customer) constant _isOwner returns(uint){return customerOrdersNum[_customer];} // reading customer orders amount
 function GetAllCustomersNum() constant _isOwner returns(uint){return allCustomersNum;} // reading all customers amount
-
+function UnlockCustomerMoney(uint _orderID) _isOwner returns(bool){orders[_orderID].lockCustomerMoneyBack = false;}// 1. unlock payment for work for contract owner
 
 
 /*-----------------------for owner(work with money)----------*/
@@ -216,21 +219,10 @@ function WithdrawMoneyToOwner(uint _orderID, uint _mainOrSecond, uint _fullOrIns
     return false;
 }
 
-//everyone can take his money back from his free balanse
-function GetYourMoney(uint256 _amount) returns(bool){
-    if(freeBalances[msg.sender]>=_amount){
-        freeBalances[msg.sender]=freeBalances[msg.sender]-_amount;
-        msg.sender.transfer(_amount); //- передать на адрес владельца
-        return true;
-    } 
-    return false;
-}
+function GetYourMoney(uint256 _amount) returns(bool){if(freeBalances[msg.sender]>=_amount){freeBalances[msg.sender]=freeBalances[msg.sender]-_amount;msg.sender.transfer(_amount);return true;}return false;}//everyone can take his money back from his free balanse
 
 
 }
-
-//get+ paid   uint customerPaid;                  // payed value (must be more then ownerPaid)
-//get+ set+-  bool lockMoney;                     // unlock (0 -unlock; 1 - lock) money from contract to contract owner
 
 /*
 основное:
