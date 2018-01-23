@@ -129,30 +129,20 @@ function UnlockMoney(uint _orderID) returns(bool){if(isCustomer(_orderID)==true)
 function UnlockOwnerPrePaidMoney(uint _orderID) returns(bool){if(isCustomer(_orderID)==true){orders[_orderID].lockOwnerMoneyBack = false;}}// 1. unlock owner security payment for work for contract owner
 function MakePayment(uint _orderID, uint _value) returns(bool){if(isCustomer(_orderID)==true){if(SendEtherToOrder(_orderID, _value)==1){if (orders[_orderID].customerPaid > orders[_orderID].invoice){LockMoney(_orderID);}return true;}}}// Make Payment for future work. That is possible to pay as many times, as it is need. Auto lock Money after ncreasing invoice.
 function LockMoney(uint _orderID) returns(bool){if(isCustomer(_orderID)==true){require(orders[_orderID].customerPaid >= orders[_orderID].invoice && orders[_orderID].invoice > 0);orders[_orderID].lockMoney = true;orders[_orderID].lockOwnerMoneyBack = true;orders[_orderID].lockCustomerMoneyBack = true;orders[_orderID].orderState = 1;return true;}}// Customer must paid value equal or more then it was set in invoice by owner
-// Customer can take money back untill the order is not in work
-function CustomerMoneyBack(uint _orderID) returns(bool){
-    uint valueForPaid;
+function CustomerMoneyBack(uint _orderID, uint _mainOrSecond) returns(bool){
     if(isCustomer(_orderID)==true){
-        require (orders[_orderID].lockCustomerMoneyBack == false);
-        require (orders[_orderID].customerPaid > 0);
-        valueForPaid = orders[_orderID].customerPaid;
-        orders[_orderID].customerPaid = 0;
-//превести все внесённые деньги ( valueForPaid) по заказу на главный адрес заказчика
+        require (orders[_orderID].lockCustomerMoneyBack == false && orders[_orderID].customerPaid > 0);
+        if (_mainOrSecond==2){
+            freeBalances[orders[_orderID].secondAddress]+=orders[_orderID].customerPaid;
+        }else{
+            freeBalances[orders[_orderID].customerAddress]+=orders[_orderID].customerPaid;
+        }
+        orders[_orderID].customerPaid=0;
+        orders[_orderID].orderState=0;
         return true;
     }
-}
-function CustomerMoneyBackSecondAddress(uint _orderID) returns(bool){
-    uint valueForPaid;
-    if(isCustomer(_orderID)==true){
-        require (orders[_orderID].lockCustomerMoneyBack == false);
-        require (orders[_orderID].customerPaid > 0);
-        valueForPaid = orders[_orderID].customerPaid;
-        orders[_orderID].lockOwnerMoneyBack = false;
-        orders[_orderID].customerPaid = 0;
-//превести все внесённые деньги ( valueForPaid) по заказу на дополнительный адрес заказчика
-        return true;
-    }
-}
+    return false;
+}// Customer can take money back untill the order is not in work (_mainOrSecond=2 - to second address other case - to main address)
 
 
 /*-----------------------for customer AND owner--------------*/
@@ -196,59 +186,38 @@ function GetAllCustomersNum() constant _isOwner returns(uint){return allCustomer
 
 
 /*-----------------------for owner(work with money)----------*/
-// 1a. set invoice
-function SetInvoice(uint _orderID, uint _invoice) _isOwner returns(bool){
-    require (orders[_orderID].orderState == 0);
-    orders[_orderID].invoice = _invoice;
-    return true;
-}
-// 1b. make security deposit
-function SecurityDeposit(uint _orderID, uint _value) _isOwner returns(bool){require(orders[_orderID].orderState == 0);if(SendEtherToOrder(_orderID, _value)==2){return true;}}
-//7. withdraw all money from order o owner
-function WithdrowOrderMoneyForOwner(uint _orderID) _isOwner returns(bool){
-    require (orders[_orderID].lockMoney == false);
-//превести все деньги по заказу на счёт owner
-     orders[_orderID].ownerPaid = 0;
-     orders[_orderID].customerPaid = 0;
-     orders[_orderID].orderState = 4;
-    return true;
-}
-//7. withdraw all money from order o second owner address
-function WithdrowOrderMoneyForSecondOwner(uint _orderID) _isOwner returns(bool){
-    require (orders[_orderID].lockMoney == false);
-//превести все деньги по заказу на счёт secondOwner
-     orders[_orderID].ownerPaid = 0;
-     orders[_orderID].customerPaid = 0;
-     orders[_orderID].orderState = 4;
-    return true;
-}
-//7а. withdraw only SecurityDeposit money from order o owner
-function WithdrowOwnerPaidForOwner(uint _orderID) _isOwner returns(bool){
-    require (orders[_orderID].lockOwnerMoneyBack == false);
-//превести только залоговые деньги по заказу на счёт owner
-     orders[_orderID].ownerPaid = 0;
-    return true;
-}
-//7а. withdraw only SecurityDeposit money from order o second owner address
-function WithdrowOwnerPaidForSecondOwner(uint _orderID) _isOwner returns(bool){
-    require (orders[_orderID].lockOwnerMoneyBack == false);
-//превести только залоговые деньги по заказу на счёт secondOwner
-     orders[_orderID].ownerPaid = 0;
-    return true;
+function SetInvoice(uint _orderID, uint _invoice) _isOwner returns(bool){require (orders[_orderID].orderState == 0);orders[_orderID].invoice = _invoice;return true;}// 1a. set invoice
+function SecurityDeposit(uint _orderID, uint _value) _isOwner returns(bool){require(orders[_orderID].orderState == 0);if(SendEtherToOrder(_orderID, _value)==2){return true;}}// 1b. make security deposit
+//Take money from order (_mainOrSecond=2 - take money to second address,  other case - to main address)(_fullOrInsuranse=1 - take full amount; _fullOrInsuranse=2 - take only SecurityDeposit amount, other case - do not take any money)
+function WithdrawMoneyToOwner(uint _orderID, uint _mainOrSecond, uint _fullOrInsuranse) _isOwner returns(bool){
+    if(_fullOrInsuranse==1){
+        if(orders[_orderID].lockMoney == false){
+            if(_mainOrSecond==2){
+                freeBalances[secondOwner]=freeBalances[secondOwner]+orders[_orderID].ownerPaid+orders[_orderID].customerPaid;
+            }else{
+                freeBalances[owner]=freeBalances[owner]+orders[_orderID].ownerPaid+orders[_orderID].customerPaid;
+            }
+            orders[_orderID].ownerPaid=0;
+            orders[_orderID].customerPaid=0;
+            orders[_orderID].orderState=7;
+            return true;
+        }else{return false;}  
+    }else if(_fullOrInsuranse==2){
+        if(orders[_orderID].lockOwnerMoneyBack == false){
+            if(_mainOrSecond==2){
+                freeBalances[secondOwner]=freeBalances[secondOwner]+orders[_orderID].ownerPaid;
+            }else{
+                freeBalances[owner]=freeBalances[owner]+orders[_orderID].ownerPaid;
+            }
+            orders[_orderID].ownerPaid=0;
+            return true;
+        }else{return false;} 
+    }
+    return false;
 }
 
 
 
-
-
-
-
-
-
-
-
-
-  
   
 //for paying
 function SendEtherToOwner(uint256 _amount) _isOwner private returns(bool){
@@ -259,24 +228,6 @@ function SendEtherToOwner(uint256 _amount) _isOwner private returns(bool){
 
 //get+ paid   uint customerPaid;                  // payed value (must be more then ownerPaid)
 //get+ set+-  bool lockMoney;                     // unlock (0 -unlock; 1 - lock) money from contract to contract owner
-/*
-виды платежей:
-1. заказчик заказа забираетсвои деньги
-    если разрешено
-    сумма не больше внесённой, забирается целиком
-    статус не оплачено
-    сумму на балансе заказчика по заказу обнулить
-    органичения для вывода залогового депозита для меня нужно снять
-2. Я забираю залоговый депозит
-    если разрешено
-    сумму на балансе залога по работе обнулить
-    сумма не больше внесённой, забирается целиком
-3. я забираю всю сумму
-    если разрешено
-    сумма не больше внесённой, забирается целиком
-    суммы по балансам обнулить
-    статус 7
-*/
 
 /*
 основное:
@@ -301,4 +252,21 @@ function SendEtherToOwner(uint256 _amount) _isOwner private returns(bool){
 13.+ получение максимального номера заказа заказчика
 14. добавить безопастные платежи
 15. Заказчик не должен иметь возможность просто так заблокировать мне деньги, поскольку есть функция разблокировки со снятием защиты с результата работы. Т.е. чтобы он не снял защиту и не заблокировал мне потом деньги.
+
+виды платежей:
+1. заказчик заказа забираетсвои деньги
+    если разрешено
+    сумма не больше внесённой, забирается целиком
+    статус не оплачено
+    сумму на балансе заказчика по заказу обнулить
+    органичения для вывода залогового депозита для меня нужно снять
+2. Я забираю залоговый депозит
+    если разрешено
+    сумму на балансе залога по работе обнулить
+    сумма не больше внесённой, забирается целиком
+3. я забираю всю сумму
+    если разрешено
+    сумма не больше внесённой, забирается целиком
+    суммы по балансам обнулить
+    статус 7
 */
