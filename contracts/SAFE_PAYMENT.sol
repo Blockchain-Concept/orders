@@ -1,4 +1,4 @@
-﻿/* *************************************************************
+/* *************************************************************
 ***Smart Contract for save deals between worker & customer******
 ***blockchain-concept.com***********ru.blockchain-concept.com***
 ************************************************************* */
@@ -49,22 +49,11 @@ function SAFE_PAYMENT(){
     allCustomersNum = 0;
     maxAllowedOpenOrdersPerCustomer = 10;
 }
-//for payments receiving 
-function () payable {freeBalances[msg.sender]+=msg.value;}
-//check order's access permission for owner and customer by its id
-function isOwnCust(uint _orderID) private returns(bool){
-    if (msg.sender == owner || msg.sender == secondOwner || msg.sender == orders[_orderID].customerAddress || msg.sender == orders[_orderID].secondAddress)
-        return true;
-    else
-        return false;
-}
-//check order's access permission for its customer by order id
-function isCustomer(uint _orderID) private returns(bool){
-    if (msg.sender == orders[_orderID].customerAddress || msg.sender == orders[_orderID].secondAddress)
-        return true;
-    else
-        return false;
-}
+function () payable {freeBalances[msg.sender]+=msg.value;}//for payments receiving 
+function GetYourMoney(uint256 _amount) returns(bool){if(freeBalances[msg.sender]>=_amount){freeBalances[msg.sender]=freeBalances[msg.sender]-_amount;msg.sender.transfer(_amount);return true;}return false;}//everyone can take his money back from his free balanse
+function isOwnCust(uint _orderID) private returns(bool){if (msg.sender == owner || msg.sender == secondOwner || msg.sender == orders[_orderID].customerAddress || msg.sender == orders[_orderID].secondAddress) return true; else return false;}//check order's access permission for owner and customer by its id
+function isCustomer(uint _orderID) private returns(bool){if (msg.sender == orders[_orderID].customerAddress || msg.sender == orders[_orderID].secondAddress) return true;else return false;}//check order's access permission for its customer by order id
+
 //check for prepared wor customer contract exist
 function CheckContractExist(address _resultContract, string _resultContractABI) private returns(bool){
 //реализовать проверку существования контракта по адресу, например, через функцию обратного вызова    
@@ -124,21 +113,25 @@ function CreateOrder(string _caption, string _description, string _comment) retu
     }
 }
 function SetSecondAddress(uint _orderID, address _secondAddress)returns(bool){if(isCustomer(_orderID)==true){orders[_orderID].secondAddress = _secondAddress; return true;}} // 1. Customer can change second manager address for his order
-function SetlockOwnerMoneyBack(uint _orderID) returns(bool){if(isCustomer(_orderID)==true){orders[_orderID].lockOwnerMoneyBack = false;return true;}} // 1. unlock security deposit for contract owner
 function UnlockMoney(uint _orderID) returns(bool){if(isCustomer(_orderID)==true){orders[_orderID].lockMoney = false;orders[_orderID].lockOwnerMoneyBack = false;if(RemoveResContractOwners(orders[_orderID].resultContract, orders[_orderID].resultContractABI) == true){orders[_orderID].orderState = 4;return true;}}}// 1. unlock payment for work for contract owner
+//function SetlockOwnerMoneyBack(uint _orderID) returns(bool){if(isCustomer(_orderID)==true){orders[_orderID].lockOwnerMoneyBack = false;return true;}} // 1. unlock security deposit for contract owner
 function UnlockOwnerPrePaidMoney(uint _orderID) returns(bool){if(isCustomer(_orderID)==true){orders[_orderID].lockOwnerMoneyBack = false;}}// 1. unlock owner security payment for work for contract owner
-function MakePayment(uint _orderID, uint _value) returns(bool){if(isCustomer(_orderID)==true){if(SendEtherToOrder(_orderID, _value)==1){if (orders[_orderID].customerPaid > orders[_orderID].invoice){LockMoney(_orderID);}return true;}}}// Make Payment for future work. That is possible to pay as many times, as it is need. Auto lock Money after ncreasing invoice.
-function LockMoney(uint _orderID) returns(bool){if(isCustomer(_orderID)==true){require(orders[_orderID].customerPaid >= orders[_orderID].invoice && orders[_orderID].invoice > 0);orders[_orderID].lockMoney = true;orders[_orderID].lockOwnerMoneyBack = true;orders[_orderID].lockCustomerMoneyBack = true;orders[_orderID].orderState = 1;return true;}}// Customer must paid value equal or more then it was set in invoice by owner
+function LockMoney(uint _orderID) private returns(bool){if(isCustomer(_orderID)==true){require(orders[_orderID].customerPaid >= orders[_orderID].invoice && orders[_orderID].invoice > 0 && orders[_orderID].orderState < 3);orders[_orderID].lockMoney = true;orders[_orderID].lockOwnerMoneyBack = true;orders[_orderID].lockCustomerMoneyBack = true;if(orders[_orderID].orderState == 0){orders[_orderID].orderState = 1;}return true;}}// Customer must paid value equal or more then it was set in invoice by owner
+function MakePayment(uint _orderID, uint _value) returns(bool){if(isCustomer(_orderID)==true){if(SendEtherToOrder(_orderID, _value)==1){if (orders[_orderID].customerPaid > orders[_orderID].invoice && orders[_orderID].orderState<3){LockMoney(_orderID);}return true;}}}// Make Payment for future work. That is possible to pay as many times, as it is need. Auto lock Money after increasing invoice.
+
+
+
 function CustomerMoneyBack(uint _orderID, uint _mainOrSecond) returns(bool){
     if(isCustomer(_orderID)==true){
-        require (orders[_orderID].lockCustomerMoneyBack == false && orders[_orderID].customerPaid > 0);
+        require (orders[_orderID].lockCustomerMoneyBack == false && orders[_orderID].customerPaid > 0 && (orders[_orderID].orderState < 2 || orders[_orderID].orderState = 5));
         if (_mainOrSecond==2){
             freeBalances[orders[_orderID].secondAddress]+=orders[_orderID].customerPaid;
         }else{
             freeBalances[orders[_orderID].customerAddress]+=orders[_orderID].customerPaid;
         }
         orders[_orderID].customerPaid=0;
-        orders[_orderID].orderState=0;
+        orders[_orderID].lockOwnerMoneyBack = false;
+        if (orders[_orderID].orderState < 2){orders[_orderID].orderState=0;}
         return true;
     }
     return false;
@@ -182,7 +175,7 @@ function SetSecondOwner(address _secondOwner) _isOwner returns(bool){secondOwner
 function GetMaxOrderID() constant _isOwner returns(uint){return orders.length;} // reading orders amount (and last order number)
 function GetMaxCustomerOrder(address _customer) constant _isOwner returns(uint){return customerOrdersNum[_customer];} // reading customer orders amount
 function GetAllCustomersNum() constant _isOwner returns(uint){return allCustomersNum;} // reading all customers amount
-
+function UnlockCustomerMoney(uint _orderID) _isOwner returns(bool){orders[_orderID].lockCustomerMoneyBack = false;orders[_orderID].orderState=5;}// 1. unlock payment for work for contract owner
 
 
 /*-----------------------for owner(work with money)----------*/
@@ -216,62 +209,38 @@ function WithdrawMoneyToOwner(uint _orderID, uint _mainOrSecond, uint _fullOrIns
     return false;
 }
 
-//everyone can take his money back from his free balanse
-function GetYourMoney(uint256 _amount) returns(bool){
-    if(freeBalances[msg.sender]>=_amount){
-        freeBalances[msg.sender]=freeBalances[msg.sender]-_amount;
-        msg.sender.transfer(_amount); //- передать на адрес владельца
-        return true;
-    } 
-    return false;
-}
+
 
 
 }
-
-//get+ paid   uint customerPaid;                  // payed value (must be more then ownerPaid)
-//get+ set+-  bool lockMoney;                     // unlock (0 -unlock; 1 - lock) money from contract to contract owner
 
 /*
 основное:
 1.+ заказчик создаёт заказ и вносит комментарий к заказу. Задаёт резервный адрес аккаунта для управления заказом. Получает id заказа и сообщает мне. Ограничить от злоупотребления пустыми заказами.
 -a.+ я выставляю счёт 
--b.+- я ложу свои деньги (опционно) в адрес работы (пока я ещё могу их снять)
--c. я корректирую параметры (кроме адресов и блокировок) существующего заказа, при условии что заказчик ещё не внёс деньги
-2.+- заказчик ложит и докладывать деньги (в сумме обязательно больше чем в инвойсе), чем блокирует всю сумму (ото всех), отмеченную на заказываемой работе и ряд её полей
+-b.+ я ложу свои деньги (опционно) в адрес работы (пока я ещё могу их снять)
+-c.+ я корректирую параметры (кроме адресов и блокировок) существующего заказа, при условии что заказчик ещё не внёс деньги
+2.+ заказчик ложит и докладывать деньги (в сумме обязательно больше чем в инвойсе), чем блокирует всю сумму (ото всех), отмеченную на заказываемой работе и ряд её полей
 3.+- я выполняю работу и выгружаю контракт в сеть, указывая его адрес в ResultContract и статус = 3-ready
 4.+- заказчик разблокирует деньги, автоматически удаляя все адреса владельцев кроме 2х своих из списка в рабочем контракте. контракт исполнен и не может дополняться деньгами (статус = 4-finished)
 дополнительно:
 
 5. я могу разблокировать сумму заказчика(статус = 5-canceled), после чего он сможет снять (все) свои деньги, автоматически разблокировав мои деньги (как только его денег станет меньше чем моих). Заказ уходит в историю.
 6.+ я и только я могу любое количество раз менять: resultContract и resultContractABI;  
-7.+- я могу снять деньги (свои или свои и оплату работы), если они разблокированны заказчиком (только сумму по конкретному заказу, уменьшив эту сумму в поле заказа)
--a.+- я могу снять залоговый депозит если разрешено
-8.+- заказчик может снять свои деньги, если я их разблокировал, чем снимает блокировку с моих денег
+7.+ я могу снять деньги (свои или свои и оплату работы), если они разблокированны заказчиком (только сумму по конкретному заказу, уменьшив эту сумму в поле заказа)
+-a.+ я могу снять залоговый депозит если разрешено
+8.+ заказчик может снять свои деньги, если я их разблокировал, чем снимает блокировку с моих денег
 9.+ всегда можно прочитать состояние всех параметров своего заказа
 10.+ Я могу прочитать все параметры любых заказов
 11.+ Я задаю дополнительный адрес для управления контрактом
 12.+ Заказчик может разблокировать как мой залог, так и всю оплату по заказу для меня.
 13.+ получение максимального номера заказа заказчика
-14. добавить безопастные платежи
-15. Заказчик не должен иметь возможность просто так заблокировать мне деньги, поскольку есть функция разблокировки со снятием защиты с результата работы. Т.е. чтобы он не снял защиту и не заблокировал мне потом деньги.
-16. забрать деньги можно только с того аккаунта под которым пытаешься забрать и только ту сумму, которая на нём лежит.
-17. нужен функционал для разблокировки потерянных сумм (на потерянных акканутах с массива freeBalances)
+14.+ Заказчик не должен иметь возможность просто так заблокировать мне деньги, поскольку есть функция разблокировки со снятием защиты с результата работы. Т.е. чтобы он не снял защиту и не заблокировал мне потом деньги.
+15.+ забрать деньги можно только с того аккаунта под которым пытаешься забрать и только ту сумму, которая на нём лежит.
+16. добавить безопастные платежи
 
 виды платежей:
-1. заказчик заказа забираетсвои деньги
-    если разрешено
-    сумма не больше внесённой, забирается целиком
-    статус не оплачено
-    сумму на балансе заказчика по заказу обнулить
-    органичения для вывода залогового депозита для меня нужно снять
-2. Я забираю залоговый депозит
-    если разрешено
-    сумму на балансе залога по работе обнулить
-    сумма не больше внесённой, забирается целиком
-3. я забираю всю сумму
-    если разрешено
-    сумма не больше внесённой, забирается целиком
-    суммы по балансам обнулить
-    статус 7
+1. заказчик заказа забираетсвои деньги(    если разрешено    сумма не больше внесённой, забирается целиком    статус не оплачено    сумму на балансе заказчика по заказу обнулить    органичения для вывода залогового депозита для меня нужно снять)
+2. Я забираю залоговый депозит(    если разрешено    сумму на балансе залога по работе обнулить    сумма не больше внесённой, забирается целиком)
+3. я забираю всю сумму(    если разрешено    сумма не больше внесённой, забирается целиком    суммы по балансам обнулить    статус 7)
 */
