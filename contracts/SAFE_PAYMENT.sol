@@ -49,22 +49,11 @@ function SAFE_PAYMENT(){
     allCustomersNum = 0;
     maxAllowedOpenOrdersPerCustomer = 10;
 }
-//for payments receiving 
-function () payable {freeBalances[msg.sender]+=msg.value;}
-//check order's access permission for owner and customer by its id
-function isOwnCust(uint _orderID) private returns(bool){
-    if (msg.sender == owner || msg.sender == secondOwner || msg.sender == orders[_orderID].customerAddress || msg.sender == orders[_orderID].secondAddress)
-        return true;
-    else
-        return false;
-}
-//check order's access permission for its customer by order id
-function isCustomer(uint _orderID) private returns(bool){
-    if (msg.sender == orders[_orderID].customerAddress || msg.sender == orders[_orderID].secondAddress)
-        return true;
-    else
-        return false;
-}
+function () payable {freeBalances[msg.sender]+=msg.value;}//for payments receiving 
+function GetYourMoney(uint256 _amount) returns(bool){if(freeBalances[msg.sender]>=_amount){freeBalances[msg.sender]=freeBalances[msg.sender]-_amount;msg.sender.transfer(_amount);return true;}return false;}//everyone can take his money back from his free balanse
+function isOwnCust(uint _orderID) private returns(bool){if (msg.sender == owner || msg.sender == secondOwner || msg.sender == orders[_orderID].customerAddress || msg.sender == orders[_orderID].secondAddress) return true; else return false;}//check order's access permission for owner and customer by its id
+function isCustomer(uint _orderID) private returns(bool){if (msg.sender == orders[_orderID].customerAddress || msg.sender == orders[_orderID].secondAddress) return true;else return false;}//check order's access permission for its customer by order id
+
 //check for prepared wor customer contract exist
 function CheckContractExist(address _resultContract, string _resultContractABI) private returns(bool){
 //реализовать проверку существования контракта по адресу, например, через функцию обратного вызова    
@@ -220,7 +209,7 @@ function WithdrawMoneyToOwner(uint _orderID, uint _mainOrSecond, uint _fullOrIns
     return false;
 }
 
-function GetYourMoney(uint256 _amount) returns(bool){if(freeBalances[msg.sender]>=_amount){freeBalances[msg.sender]=freeBalances[msg.sender]-_amount;msg.sender.transfer(_amount);return true;}return false;}//everyone can take his money back from his free balanse
+
 
 
 }
@@ -248,8 +237,7 @@ function GetYourMoney(uint256 _amount) returns(bool){if(freeBalances[msg.sender]
 13.+ получение максимального номера заказа заказчика
 14.+ Заказчик не должен иметь возможность просто так заблокировать мне деньги, поскольку есть функция разблокировки со снятием защиты с результата работы. Т.е. чтобы он не снял защиту и не заблокировал мне потом деньги.
 15.+ забрать деньги можно только с того аккаунта под которым пытаешься забрать и только ту сумму, которая на нём лежит.
-16. нужен функционал для разблокировки потерянных сумм (на потерянных акканутах с массива freeBalances)
-17. добавить безопастные платежи
+16. добавить безопастные платежи
 
 виды платежей:
 1. заказчик заказа забираетсвои деньги(    если разрешено    сумма не больше внесённой, забирается целиком    статус не оплачено    сумму на балансе заказчика по заказу обнулить    органичения для вывода залогового депозита для меня нужно снять)
